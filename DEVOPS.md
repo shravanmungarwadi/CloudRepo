@@ -114,3 +114,67 @@ Terraform provisions:
 - Removed cached files using:
   ```bash
   git rm -r --cached .terraform
+
+### Issue 2: GitHub Actions Not Starting Due to Billing Lock
+
+**Symptoms**
+- GitHub Actions workflows did not start
+- Jobs showed status: *“Account is locked due to a billing issue”*
+- No pipeline logs were generated
+
+**Root Cause**
+- International transactions were disabled on the linked debit card
+- GitHub could not verify billing, temporarily locking Actions
+
+**Fix Applied**
+- Enabled international transactions on the debit card
+- Waited for GitHub billing verification to complete
+- Manually re-ran the GitHub Actions workflow
+
+**Verification**
+- GitHub Actions jobs started successfully
+- Build and deploy stages executed without billing errors
+
+---
+
+### Issue 3: Docker Permission Denied on EC2 During Deployment
+
+**Symptoms**
+- CI/CD deploy job failed on EC2
+- Docker commands returned:
+
+**Root Cause**
+- EC2 user (`ubuntu`) was not added to the `docker` group
+- Docker socket (`/var/run/docker.sock`) required elevated permissions
+
+**Fix Applied**
+```bash
+sudo usermod -aG docker ubuntu
+sudo systemctl restart docker
+```
+
+### Issue 4: Frontend Showing “Connection Failed” Despite Backend Running
+
+**Symptoms**
+- Frontend UI loaded successfully
+- Backend container was running
+- API requests returned HTTP 400 Bad Request
+- Browser displayed: “Failed to connect to the backend”
+
+**Root Cause**
+- Django ALLOWED_HOSTS was empty ([])
+- Requests coming through Nginx proxy were rejected
+- Environment variables were not correctly applied at runtime
+
+**Fix Applied**
+- Passed ALLOWED_HOSTS=* via docker-compose.prod.yml
+- Ensured backend reads environment variables at container startup
+- Recreated the backend container
+            bash : docker compose -f docker-compose.prod.yml up -d --force-recreate backend
+   Verification--> bash : curl http://localhost/api/hello/
+
+###Result
+
+**HTTP 200 OK returned**
+- Frontend successfully displayed:
+- Hello World from Django Backend!
