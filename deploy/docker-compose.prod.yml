@@ -7,6 +7,7 @@ services:
       # Adjust these to match your backend (examples)
       DEBUG: "0"
       ALLOWED_HOSTS: "*"
+    command: python manage.py runserver 0.0.0.0:8000
     networks:
       - appnet
 
