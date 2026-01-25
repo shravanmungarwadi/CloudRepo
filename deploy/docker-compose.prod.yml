@@ -1,0 +1,26 @@
+services:
+  backend:
+    image: shravanvm/devops-backend:latest
+    container_name: backend
+    restart: always
+    environment:
+      # Adjust these to match your backend (examples)
+      DEBUG: "0"
+      ALLOWED_HOSTS: "*"
+    networks:
+      - appnet
+
+  frontend:
+    image: shravanvm/devops-frontend:latest
+    container_name: frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - appnet
+
+networks:
+  appnet:
+    driver: bridge
