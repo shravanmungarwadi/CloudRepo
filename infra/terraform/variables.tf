@@ -18,3 +18,9 @@ variable "ssh_ingress_cidr" {
   type        = string
   default     = "0.0.0.0/0"
 }
+
+variable "enable_eip" {
+  description = "Whether to allocate and associate an Elastic IP for the EC2 instance."
+  type        = bool
+  default     = false
+}

@@ -143,7 +143,10 @@ resource "aws_instance" "app" {
 }
 
 # Optional but recommended: Elastic IP so your URL doesn't change
+# Toggle via var.enable_eip to avoid Terraform drift when you don't want an EIP.
+# (Reference block kept here for quick enabling with enable_eip=true.)
 resource "aws_eip" "app" {
+  count  = var.enable_eip ? 1 : 0
   domain = "vpc"
   tags = {
     Name = "${var.project_name}-eip"
@@ -151,6 +154,7 @@ resource "aws_eip" "app" {
 }
 
 resource "aws_eip_association" "app" {
+  count         = var.enable_eip ? 1 : 0
   instance_id   = aws_instance.app.id
-  allocation_id = aws_eip.app.id
+  allocation_id = aws_eip.app[0].id
 }
