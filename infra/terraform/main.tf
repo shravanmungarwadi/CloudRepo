@@ -153,7 +153,7 @@ resource "aws_eip" "app" {
   }
 }
 
-# Associate EIP to EC2 instance if enabled
+# Associate EIP to EC2 instance if enabled ..
 resource "aws_eip_association" "app" {
   count         = var.enable_eip ? 1 : 0
   instance_id   = aws_instance.app.id
