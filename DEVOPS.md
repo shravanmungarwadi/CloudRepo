@@ -178,3 +178,5 @@ sudo systemctl restart docker
 **HTTP 200 OK returned**
 - Frontend successfully displayed:
 - Hello World from Django Backend!
+
+ok
