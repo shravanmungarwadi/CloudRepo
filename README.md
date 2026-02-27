@@ -6,10 +6,14 @@ A complete end-to-end DevOps implementation of a "Hello World" full-stack applic
 
 ## 🌐 Live Demo
 
+> ⚠️ **Note:** This project uses AWS EC2 with Elastic IP. Infrastructure is brought up on demand to save costs. URLs below are updated each time the project is redeployed.
+
 | Service | URL |
 |---|---|
-| Frontend | http://13.205.57.22 |
-| Backend API | http://13.205.57.22/api/hello/ |
+| Frontend | http://\<ELASTIC_IP\> |
+| Backend API | http://\<ELASTIC_IP\>/api/hello/ |
+
+> 📌 **Current IP:** Update this after every `terraform apply` with the new Elastic IP shown in the terminal output.
 
 ---
 
