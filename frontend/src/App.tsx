@@ -31,7 +31,7 @@ function App() {
       <header className="header">
         <Server className="icon-main" size={48} />
         <h1>DevOps Assessment</h1>
-        <p className="subtitle">Full-stack Hello World Application</p>
+        <p className="subtitle">Full-stack Hello World Application shravan</p>
       </header>
 
       <main className="main-card">
