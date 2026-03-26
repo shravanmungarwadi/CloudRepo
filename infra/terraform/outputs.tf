@@ -5,3 +5,7 @@ output "ec2_public_ip" {
 output "ssh_user" {
   value = "ubuntu"
 }
+
+output "s3_bucket_name" {
+  value = aws_s3_bucket.app_storage.bucket
+}

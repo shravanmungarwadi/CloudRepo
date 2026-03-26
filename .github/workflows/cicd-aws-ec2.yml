@@ -8,7 +8,47 @@ permissions:
   contents: read
 
 jobs:
+
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── BACKEND ──────────────────────────────
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint backend (flake8)
+        working-directory: ./backend
+        run: flake8 . --max-line-length=120 --exclude=migrations,__pycache__
+
+      - name: Test backend (pytest)
+        working-directory: ./backend
+        run: pytest
+
+      # ── FRONTEND ─────────────────────────────
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Lint frontend (eslint)
+        working-directory: ./frontend
+        run: npm run lint
+
   build-and-push:
+    needs: lint-and-test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

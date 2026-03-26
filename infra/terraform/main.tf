@@ -159,3 +159,25 @@ resource "aws_eip_association" "app" {
   instance_id   = aws_instance.app.id
   allocation_id = aws_eip.app[0].id
 }
+
+# S3 bucket for storage (static assets / future use)
+resource "aws_s3_bucket" "app_storage" {
+  bucket        = "${var.project_name}-storage-${random_id.bucket_suffix.hex}"
+  force_destroy = true
+
+  tags = {
+    Name = "${var.project_name}-storage"
+  }
+}
+
+resource "random_id" "bucket_suffix" {
+  byte_length = 4
+}
+
+resource "aws_s3_bucket_versioning" "app_storage" {
+  bucket = aws_s3_bucket.app_storage.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
