@@ -113,6 +113,7 @@ resource "aws_instance" "app" {
   vpc_security_group_ids      = [aws_security_group.web.id]
   key_name                    = aws_key_pair.ec2.key_name
   associate_public_ip_address = true
+  iam_instance_profile        = aws_iam_instance_profile.ec2_profile.name
 
   user_data = <<-EOF
     #!/bin/bash
@@ -180,4 +181,57 @@ resource "aws_s3_bucket_versioning" "app_storage" {
   versioning_configuration {
     status = "Enabled"
   }
+}
+
+# IAM Role for EC2 to access S3
+resource "aws_iam_role" "ec2_s3_role" {
+  name = "${var.project_name}-ec2-s3-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name = "${var.project_name}-ec2-s3-role"
+  }
+}
+
+# IAM Policy — what EC2 is allowed to do in S3
+resource "aws_iam_role_policy" "ec2_s3_policy" {
+  name = "${var.project_name}-ec2-s3-policy"
+  role = aws_iam_role.ec2_s3_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          aws_s3_bucket.app_storage.arn,
+          "${aws_s3_bucket.app_storage.arn}/*"
+        ]
+      }
+    ]
+  })
+}
+
+# Instance Profile — the bridge that attaches IAM Role to EC2
+resource "aws_iam_instance_profile" "ec2_profile" {
+  name = "${var.project_name}-ec2-profile"
+  role = aws_iam_role.ec2_s3_role.name
 }

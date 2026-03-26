@@ -9,3 +9,7 @@ output "ssh_user" {
 output "s3_bucket_name" {
   value = aws_s3_bucket.app_storage.bucket
 }
+
+output "iam_role_name" {
+  value = aws_iam_role.ec2_s3_role.name
+}
