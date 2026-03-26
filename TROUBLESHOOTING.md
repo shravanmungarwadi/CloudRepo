@@ -1,246 +1,115 @@
-# 🛠️ Troubleshooting & Debugging Log
+# 🛠️ Troubleshooting Log
 
-This document contains all real errors encountered during the DevOps Assessment project — in the **exact order they were faced** — along with root causes and fixes applied.
+This document records all the real challenges encountered during this DevOps project
+and exactly how each one was diagnosed and resolved.
 
 ---
 
 ## Issue 1: Git Push Rejected Due to Large Files
 
-**Phase:** Initial Setup
+**Phase:** Version Control Setup
 
-**Symptom**
+**Symptoms:**
 ```
-remote: error: File .terraform/... is 150MB; exceeds GitHub's file size limit of 100MB
+error: File .terraform/providers/... exceeds GitHub's file size limit of 100MB
+remote: error: GH001: Large files detected.
 ```
 
-**Root Cause**
-- `.terraform/` directory was accidentally committed to Git
-- Terraform provider binaries are large files GitHub doesn't allow
+**Root Cause:**
+The `.terraform` directory (which contains provider binaries) was accidentally
+committed to Git before `.gitignore` was configured.
 
-**Fix Applied**
+**Fix Applied:**
 ```bash
 # Add to .gitignore
 echo ".terraform/" >> .gitignore
 
-# Remove from Git tracking
+# Remove from Git tracking without deleting the files
 git rm -r --cached .terraform
 
 # Commit the fix
-git add .gitignore
 git commit -m "fix: remove .terraform from tracking"
 git push origin main
 ```
 
-**Result:** ✅ Push succeeded
+**Lesson Learned:**
+Always configure `.gitignore` before the first `git add .`. The `.terraform`
+directory must always be excluded — it contains binary provider files that
+are too large for GitHub and are machine-specific anyway.
 
 ---
 
-## Issue 2: Git Push Rejected — PAT Token Expired
-
-**Phase:** Initial Setup / Any Push
-
-**Symptom**
-```
-remote: Invalid username or token.
-Password authentication is not supported for Git operations.
-fatal: Authentication failed for 'https://github.com/...'
-```
-
-**Root Cause**
-- GitHub no longer accepts passwords for Git operations
-- Personal Access Token (PAT) had expired (visible in GitHub → Settings → Developer Settings → Tokens)
-
-**Fix Applied**
-1. Go to **GitHub → Settings → Developer Settings → Personal Access Tokens → Tokens (classic)**
-2. Generate a new token with `repo` and `workflow` scopes
-3. Update remote URL with new token:
-```bash
-git remote set-url origin https://<NEW_TOKEN>@github.com/<username>/<repo>.git
-git push origin main
-```
-
-**Result:** ✅ Push succeeded
-
----
-
-## Issue 3: Accidentally Cloned Repo Inside Project (Embedded Repository)
-
-**Phase:** Initial Setup
-
-**Symptom**
-```
-warning: adding embedded git repository: CloudRepo
-hint: You've added another git repository inside your current repository
-```
-
-**Root Cause**
-- `git clone` was run inside the project folder
-- Created a "repo inside a repo" which Git cannot track properly
-
-**Fix Applied**
-```bash
-# Force remove the embedded repo from Git tracking
-git rm -rf --cached CloudRepo
-
-# Delete the folder completely
-rm -rf CloudRepo
-
-# Commit the fix
-git add .
-git commit -m "fix: remove accidentally cloned embedded repo"
-git push origin main
-```
-
-**Result:** ✅ Embedded repo removed, push succeeded
-
----
-
-## Issue 4: GitHub Actions Not Starting — Billing Lock
+## Issue 2: GitHub Actions Not Starting Due to Billing Lock
 
 **Phase:** CI/CD Setup
 
-**Symptoms**
-- GitHub Actions workflows did not start at all
-- Jobs showed status: `"Account is locked due to a billing issue"`
-- No pipeline logs were generated
+**Symptoms:**
+- GitHub Actions workflows did not start after push
+- Jobs showed status: *"Account is locked due to a billing issue"*
+- No pipeline logs were generated at all
 
-**Root Cause**
-- International transactions were disabled on the linked debit card
-- GitHub could not verify billing and temporarily locked Actions
+**Root Cause:**
+International transactions were disabled on the linked debit card.
+GitHub could not verify billing, which temporarily locked Actions.
 
-**Fix Applied**
-- Enabled international transactions on the debit card
-- Waited for GitHub billing verification to complete
-- Manually re-ran the GitHub Actions workflow
+**Fix Applied:**
+1. Enabled international transactions on the debit card
+2. Waited for GitHub billing verification to complete (~10 minutes)
+3. Manually re-ran the GitHub Actions workflow
 
-**Result:** ✅ GitHub Actions started successfully, build and deploy stages executed
-
----
-
-## Issue 5: EC2 SSH Private Key Missing
-
-**Phase:** Infrastructure Setup
-
-**Symptom**
-```
-cat: /infra/terraform/keys/ec2_key: No such file or directory
-```
-
-**Root Cause**
-- Only `ec2_key.pub` (public key) existed in the repo
-- The private key `ec2_key` was never generated or was lost
-- Without the private key, SSH into EC2 is impossible
-
-**Fix Applied**
-```bash
-# Generate a new SSH key pair directly into the keys folder
-ssh-keygen -t ed25519 -C "devops-assessment-ec2" -f /d/devops-assessment/infra/terraform/keys/ec2_key
-# Press Enter twice for no passphrase
-
-# Verify both files exist
-ls -la /d/devops-assessment/infra/terraform/keys/
-# Should show: ec2_key  ec2_key.pub
-```
-
-Then updated the `EC2_SSH_PRIVATE_KEY` GitHub secret with the new private key content.
-
-**Result:** ✅ SSH into EC2 worked successfully
+**Verification:**
+GitHub Actions jobs started successfully. Build and deploy stages
+executed without any billing errors.
 
 ---
 
-## Issue 6: Docker Permission Denied on EC2 During Deployment
+## Issue 3: Docker Permission Denied on EC2
 
-**Phase:** CI/CD Deployment
+**Phase:** First Deployment to EC2
 
-**Symptom**
+**Symptoms:**
 ```
-permission denied while trying to connect to the Docker API
+permission denied while trying to connect to the Docker daemon socket
 at unix:///var/run/docker.sock
 ```
 
-**Root Cause**
-- EC2 user (`ubuntu`) was not added to the `docker` group
-- Docker socket `/var/run/docker.sock` requires group membership
-- Even though Docker was installed via Terraform `user_data`, the group was not assigned
+**Root Cause:**
+The EC2 `ubuntu` user was not added to the `docker` group.
+Docker socket requires elevated group membership to use without `sudo`.
 
-**Fix Applied**
+**Fix Applied:**
 ```bash
-# SSH into EC2 first
-ssh -i infra/terraform/keys/ec2_key ubuntu@<EC2_IP>
-
-# Add ubuntu user to docker group
 sudo usermod -aG docker ubuntu
-
-# Restart Docker
 sudo systemctl restart docker
-
-# Exit and reconnect for changes to take effect
+# Log out and back in for group change to take effect
 exit
 ```
 
-**Result:** ✅ CI/CD deploy job ran successfully
+**Why This Matters (DevOps Perspective):**
+Running Docker commands with `sudo` in CI/CD pipelines is a security risk.
+Adding the user to the `docker` group is the correct production approach.
 
 ---
 
-## Issue 7: Deployment Succeeded But Website Shows "Connection Failed"
+## Issue 4: Frontend Showing "Connection Failed" Despite Backend Running
 
-**Phase:** First Deployment
+**Phase:** Production Deployment
 
-**Symptoms**
-- GitHub Actions: ✅ Success
-- Browser: ❌ `Failed to connect to the backend`
-- Frontend loaded but showed no data
+**Symptoms:**
+- Frontend UI loaded successfully
+- Backend container was running
+- API requests returned HTTP 400 Bad Request
+- Browser showed: "Failed to connect to the backend"
 
-**Root Cause**
-- Frontend React code was calling:
-```
-http://localhost:8000/api/hello/
-```
-- In production, `localhost` refers to the **user's browser**, not the EC2 server
-- The request never reached Django
+**Root Cause:**
+Django's `ALLOWED_HOSTS` setting was empty (`[]`). Requests coming through
+Nginx proxy were being rejected because Django didn't trust the hostname.
 
-**Fix Applied**
-
-Changed the frontend API call from absolute to relative path:
-```javascript
-// ❌ Wrong
-axios.get('http://localhost:8000/api/hello/')
-
-// ✅ Correct
-axios.get('/api/hello/')
-```
-
-Nginx then handles routing `/api/` to the backend container.
-
-**Result:** ✅ Frontend correctly calls backend through Nginx proxy
-
----
-
-## Issue 8: API Works Inside EC2 But Fails Externally (HTTP 400)
-
-**Phase:** First Deployment
-
-**Evidence**
-```bash
-curl http://localhost/api/hello/     # 200 OK   ✅
-curl http://<EC2_PUBLIC_IP>/api/hello/  # 400 Bad Request ❌
-```
-
-**Root Cause**
-- Django `ALLOWED_HOSTS` was empty `[]` in `settings.py`
-- Django blocks any request where the `Host` header is not in the allowed list
-- Confirmation from Django error page:
-```html
-<title>DisallowedHost at /api/hello/</title>
-```
-
-**Fix Applied**
-
-Added `ALLOWED_HOSTS` via `docker-compose.prod.yml`:
+**Fix Applied:**
 ```yaml
+# In docker-compose.prod.yml
 environment:
-  ALLOWED_HOSTS: "*"
-  DEBUG: "0"
+  - ALLOWED_HOSTS=*
 ```
 
 Then force-recreated the backend container:
@@ -248,182 +117,243 @@ Then force-recreated the backend container:
 docker compose -f docker-compose.prod.yml up -d --force-recreate backend
 ```
 
-**Result:** ✅ HTTP 200 OK returned from both inside and outside EC2
+**Verification:**
+```bash
+curl http://localhost/api/hello/
+# Returns: {"message": "Hello World from Django Backend!"}
+```
 
 ---
 
-## Issue 9: Environment Variable Set But Django Not Reading It
+## Issue 5: Flake8 Lint Failures in CI/CD Pipeline
 
-**Phase:** Backend Configuration
+**Phase:** Adding Lint + Test to CI/CD
 
-**Observation**
+**Symptoms:**
+GitHub Actions `lint-and-test` job failed with multiple errors:
+```
+./config/settings.py:28:1: E402 module level import not at top of file
+./config/settings.py:34:1: E303 too many blank lines (3)
+./core/admin.py:1:1: F401 'django.contrib.admin' imported but unused
+./core/models.py:1:1: F401 'django.db.models' imported but unused
+./core/tests.py:3:1: E302 expected 2 blank lines, found 1
+./core/views.py:3:1: E302 expected 2 blank lines, found 1
+./core/tests.py:17:78: W292 no newline at end of file
+```
+
+**Root Cause:**
+Python code didn't follow PEP8 style rules:
+- `import os` was in the middle of `settings.py` instead of the top
+- Unused imports in `admin.py` and `models.py`
+- Missing blank lines before function/class definitions
+- Missing newline at end of files
+
+**Fix Applied:**
+1. Moved `import os` to the top of `settings.py`
+2. Removed unused imports from `admin.py` and `models.py`
+3. Added 2 blank lines before all function and class definitions
+4. Added newline at end of `tests.py`
+
+**Lesson Learned:**
+Run flake8 locally before pushing to catch these issues early:
 ```bash
-echo $ALLOWED_HOSTS   # Shows: *
+cd backend
+pip install flake8
+flake8 . --max-line-length=120 --exclude=migrations,__pycache__
 ```
-But inside Django:
+
+---
+
+## Issue 6: AWS Security Group DependencyViolation (15-Minute Timeout)
+
+**Phase:** Adding Prometheus + Grafana ports to Security Group
+
+**Symptoms:**
+```
+Error: deleting Security Group (sg-0d64a83c6abdab23d):
+DependencyViolation: resource sg-0d64a83c6abdab23d has a dependent object
+```
+
+Terraform tried to destroy and recreate the security group for 15+ minutes
+and timed out. This happened because the `description` field was changed.
+
+**Root Cause:**
+AWS security group `description` is an **immutable field**. Once created,
+it cannot be updated in-place. Terraform was forced to:
+1. Destroy the old security group
+2. Create a new one
+
+But AWS couldn't delete the old SG because EC2's network interface was
+still attached to it, causing the `DependencyViolation` error.
+
+**Fix Applied:**
+
+Step 1 — Wait for Terraform to time out and exit
+
+Step 2 — Go to AWS Console:
+```
+EC2 → Instances → i-06d6f281fb1ec9a05
+→ Actions → Security → Change security groups
+→ Add "default" security group
+→ Save (EC2 must always have at least 1 SG attached)
+```
+
+Step 3 — Run terraform apply again:
+```bash
+terraform apply
+```
+This time the old SG had no dependencies — deleted in 1 second ✅
+
+**Lesson Learned:**
+**Never change the `description` field of an existing `aws_security_group`.**
+Only add/modify ingress and egress rules using separate
+`aws_vpc_security_group_ingress_rule` resources. Descriptions are cosmetic
+labels only — their immutability makes changing them expensive.
+
+---
+
+## Issue 7: Prometheus Showing Backend as DOWN (value = 0)
+
+**Phase:** Monitoring Setup
+
+**Symptoms:**
+Running `up` query in Prometheus showed:
+```
+up{instance="backend:8000", job="backend"} = 0
+```
+Even though the backend container was running perfectly fine.
+
+**Root Cause — Two separate issues:**
+
+**Issue A:** Django had no `/metrics` endpoint. Prometheus was trying to
+scrape `backend:8000/metrics` but Django returned 404.
+
+**Issue B:** Even after installing `django-prometheus`, the scrape was
+returning HTTP 400. Docker logs showed:
+```
+DisallowedHost: Invalid HTTP_HOST header: 'backend:8000'
+You may need to add 'backend' to ALLOWED_HOSTS.
+```
+Prometheus uses the container name `backend:8000` as the Host header,
+which Django rejected because it wasn't in `ALLOWED_HOSTS`.
+
+**Fix Applied:**
+
+For Issue A — Added django-prometheus to the backend:
+```
+# requirements.txt
+django-prometheus==2.3.1
+```
 ```python
-ALLOWED_HOSTS = []    # Still empty!
+# settings.py — add to INSTALLED_APPS (must be FIRST)
+'django_prometheus',
 ```
-
-**Root Cause**
-- `settings.py` had `ALLOWED_HOSTS` hardcoded as `[]`
-- Django was never reading the environment variable — it was just ignored
-
-**Fix Applied**
-
-Updated `backend/config/settings.py`:
 ```python
-import os
-
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
-DEBUG = os.getenv("DEBUG", "0") == "1"
+# urls.py
+path('', include('django_prometheus.urls')),
 ```
 
-Also ensured `docker-compose.prod.yml` passes the env vars:
+For Issue B — Updated ALLOWED_HOSTS on EC2:
+```bash
+cd /opt/devops-assessment
+cat > .env << EOF
+DOCKERHUB_USERNAME=shravanmungarwadi
+ALLOWED_HOSTS=65.2.19.214,backend,localhost
+EOF
+docker compose -f docker-compose.prod.yml up -d backend
+```
+
+**Verification:**
+```bash
+docker exec prometheus wget -qO- http://backend:8000/metrics | head -5
+# Returns: # HELP go_gc_duration_seconds ...
+```
+
+Prometheus `up` query then showed:
+```
+up{instance="backend:8000", job="backend"} = 1  ✅
+```
+
+---
+
+## Issue 8: Grafana Dashboard Showing N/A for All Metrics
+
+**Phase:** Grafana Dashboard Setup
+
+**Symptoms:**
+After importing Node Exporter Full dashboard (ID: 1860), all panels
+showed N/A or "No data".
+
+**Root Cause — Two issues:**
+
+**Issue A:** Node Exporter container was not running. The dashboard
+requires `prom/node-exporter` which collects EC2 system metrics.
+Without it, Prometheus has no system data to show.
+
+**Issue B:** After adding Node Exporter, Prometheus wasn't scraping it
+because the old `prometheus.yml` (without the `node-exporter` job) was
+still running. Prometheus needs a restart to reload its config.
+
+**Fix Applied:**
+
+Added node-exporter to `docker-compose.prod.yml`:
 ```yaml
-environment:
-  DEBUG: "0"
-  ALLOWED_HOSTS: "*"
+node-exporter:
+  image: prom/node-exporter:latest
+  container_name: node-exporter
+  restart: always
+  ports:
+    - "9100:9100"
+  networks:
+    - appnet
 ```
 
-**Result:** ✅ Django correctly reads environment variables at runtime
-
----
-
-## Issue 10: Cannot Edit Files Inside Running Container
-
-**Phase:** Debugging Inside Container
-
-**Symptom**
-```
-vi: not found
-nano: not found
-sudo: not found
+Added scrape job to `prometheus.yml`:
+```yaml
+- job_name: 'node-exporter'
+  static_configs:
+    - targets: ['node-exporter:9100']
 ```
 
-**Root Cause**
-- Docker images use minimal base images (`python:3.11-slim`)
-- Text editors are not installed to keep image size small
-- Containers are **immutable** by design — you should NOT edit files inside them
-
-**Important DevOps Lesson**
-
-> ❌ Never patch a running container directly
->
-> ✅ Always fix the source code → rebuild image → redeploy
-
-**Correct Approach**
+Restarted Prometheus to reload config:
 ```bash
-# Fix the file on your laptop
-# Then push to GitHub
-git add .
-git commit -m "fix: update configuration"
-git push origin main
-# CI/CD automatically rebuilds and redeploys
+docker compose -f docker-compose.prod.yml restart prometheus
 ```
 
-**Result:** ✅ Understanding that containers are immutable, fixes go through CI/CD pipeline
-
----
-
-## Issue 11: Nginx Not Proxying API Requests — "Hello World" Missing
-
-**Phase:** Production Deployment
-
-**Symptoms**
-- Frontend loads ✅
-- "Backend Online" badge shows ✅
-- But **"Hello World from Django Backend!"** message missing ❌
-
-**Root Cause**
-
-`frontend/nginx.conf` was missing the `/api/` proxy block:
-```nginx
-# Original - missing /api/ block!
-server {
-    listen 80;
-    location / {
-        root /usr/share/nginx/html;
-        try_files $uri /index.html;
-    }
-    # No /api/ block = Nginx doesn't know where to send API requests!
-}
+**Verification:**
+All 3 targets showing UP at `http://65.2.19.214:9090/targets`:
+```
+backend        UP ✅
+node-exporter  UP ✅
+prometheus     UP ✅
 ```
 
-When React called `/api/hello/`, Nginx tried to serve it as a static file — which doesn't exist — so it returned nothing.
+Grafana dashboard then showed live CPU (91.6%), RAM (71.4%), Uptime data.
 
-**Fix Applied**
+---
 
-Added the `/api/` proxy block to `frontend/nginx.conf`:
-```nginx
-server {
-    listen 80;
+## Issue 9: Internet Connection Drop During terraform apply
 
-    location / {
-        root /usr/share/nginx/html;
-        index index.html index.htm;
-        try_files $uri /index.html;
-    }
+**Phase:** Security Group Recreation
 
-    location /api/ {
-        proxy_pass http://backend:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
+**Symptoms:**
+```
+Error: request send failed
+dial tcp: lookup ec2.ap-south-1.amazonaws.com: no such host
 ```
 
-Then pushed the change — CI/CD automatically rebuilt the frontend image and redeployed.
+**Root Cause:**
+Local WiFi/internet connection dropped while Terraform was in the middle
+of communicating with the AWS API. This is a network issue, not an
+AWS or Terraform problem.
 
-**Result:** ✅ "Hello World from Django Backend!" displayed correctly
+**Fix Applied:**
+1. Verified internet connection was restored
+2. Ran `terraform apply` again — Terraform resumed from where it left off
 
----
-
-## Issue 12: GitHub Actions Billing — International Transaction Block
-
-**Phase:** CI/CD Verification
-
-**Symptoms**
-- Workflows stuck in queue
-- Error: `"Account is locked due to a billing issue"`
-
-**Root Cause**
-- GitHub attempted to charge/verify the linked payment method
-- Indian debit card had international transactions disabled
-
-**Fix Applied**
-- Called bank / used net banking to enable international transactions
-- GitHub automatically re-verified and unlocked Actions
-
-**Result:** ✅ Pipelines resumed running normally
-
----
-
-## 📋 Summary Table
-
-| # | Issue | Phase | Fixed? |
-|---|---|---|---|
-| 1 | Git push rejected — large `.terraform` files | Setup | ✅ |
-| 2 | PAT token expired — auth failed | Setup | ✅ |
-| 3 | Embedded repo accidentally cloned | Setup | ✅ |
-| 4 | GitHub Actions billing lock | CI/CD | ✅ |
-| 5 | EC2 SSH private key missing | Infrastructure | ✅ |
-| 6 | Docker permission denied on EC2 | Deployment | ✅ |
-| 7 | Frontend "Connection Failed" — localhost issue | Deployment | ✅ |
-| 8 | HTTP 400 from external — ALLOWED_HOSTS empty | Backend | ✅ |
-| 9 | Env var set but Django not reading it | Backend | ✅ |
-| 10 | Cannot edit files inside container | Debugging | ✅ |
-| 11 | Nginx missing `/api/` proxy block | Nginx Config | ✅ |
-| 12 | GitHub Actions billing — international block | CI/CD | ✅ |
-
----
-
-## 💡 Key DevOps Learnings
-
-- **Containers are immutable** — never patch a running container, fix source code and redeploy
-- **`localhost` never works in production frontend** — always use relative paths like `/api/`
-- **Django `ALLOWED_HOSTS` is a common production blocker** — always set via environment variable
-- **CI/CD success ≠ application success** — always verify the app in browser after deploy
-- **Environment-driven configuration is mandatory** — never hardcode values, use `os.getenv()`
-- **SSH keys must be backed up** — losing the private key means losing server access
-- **Docker group membership** — always add deploy user to `docker` group after EC2 setup
+**Lesson Learned:**
+Terraform is stateful. If a `terraform apply` is interrupted by a network
+issue, simply run `terraform apply` again. It reads the current state
+from `terraform.tfstate` and only applies the remaining changes.
+Never use `terraform force-unlock` or manually edit state files unless
+absolutely necessary.
